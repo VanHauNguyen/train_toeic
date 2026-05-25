@@ -1,1 +1,26 @@
+# dependencies
 node_modules
+
+# build
+dist
+build
+.next
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode
+.idea
+
+# cache
+.cache
+coverage
