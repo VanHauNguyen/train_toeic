@@ -1,0 +1,392 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum QuestionType {
+  LISTENING
+  READING
+  GRAMMAR
+  VOCABULARY
+}
+
+enum ToeicPart {
+  PART1
+  PART2
+  PART3
+  PART4
+  PART5
+  PART6
+  PART7
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AiMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum SkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum MistakeType {
+  GRAMMAR
+  VOCABULARY
+  LISTENING
+  READING
+  TRAP_OPTION
+  TIME_MANAGEMENT
+  UNKNOWN
+}
+
+enum UserLanguage {
+  EN
+  ZH_TW
+  VI
+}
+
+enum CefrLevel {
+  A1
+  A2
+  B1
+  B2
+  C1
+  C2
+}
+
+enum ContentSource {
+  SEED
+  IMPORTED
+  AI_GENERATED
+  MANUAL
+}
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  passwordHash      String
+  name              String?
+  role              UserRole           @default(USER)
+  preferredLanguage UserLanguage       @default(ZH_TW)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  attempts          TestAttempt[]
+  answers           UserAnswer[]
+  progress          StudyProgress[]
+  chatSessions      AiChatSession[]
+  explanations      AiExplanation[]
+  studyPlans        AiStudyPlan[]
+  mistakeAnalyses   MistakeAnalysis[]
+  skillProfile      UserSkillProfile?
+  generatedQuestions AiGeneratedQuestion[]
+}
+
+model Vocabulary {
+  id           String       @id @default(cuid())
+  word         String       @unique
+  meaningZhTW  String       @map("meaningZhTw")
+  meaningVi    String?
+  partOfSpeech String?
+  example      String?
+  exampleZhTW  String?      @map("exampleZhTw")
+  exampleVi    String?
+  tags         String[]     @default([])
+  toeicCategory String?
+  cefrLevel    CefrLevel?
+  frequencyScore Int        @default(0)
+  synonyms     String[]     @default([])
+  antonyms     String[]     @default([])
+  collocations String[]     @default([])
+  source       ContentSource @default(SEED)
+  sourceRef    String?
+  nextReviewAt DateTime?
+  reviewCount  Int          @default(0)
+  easeFactor   Float        @default(2.5)
+  level        SkillLevel   @default(BEGINNER)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([toeicCategory])
+  @@index([cefrLevel])
+  @@index([frequencyScore])
+  @@index([nextReviewAt])
+}
+
+model GrammarLesson {
+  id          String      @id @default(cuid())
+  title       String
+  titleZhTW   String?
+  titleVi     String?
+  content     String
+  contentZhTW String?
+  contentVi   String?
+  level       SkillLevel  @default(BEGINNER)
+  tags        String[]    @default([])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+model AudioFile {
+  id          String     @id @default(cuid())
+  url         String
+  transcript  String?
+  durationSec Int?
+  createdAt   DateTime   @default(now())
+  questions   Question[]
+}
+
+model Question {
+  id             String            @id @default(cuid())
+  type           QuestionType
+  toeicPart      ToeicPart
+  prompt         String
+  questionTextZhTW String?
+  questionTextVi   String?
+  passage        String?
+  passageZhTW    String?
+  passageVi      String?
+  explanation    String?
+  explanationZhTW String?
+  explanationVi   String?
+  difficulty     SkillLevel        @default(BEGINNER)
+  tags           String[]          @default([])
+  source         ContentSource     @default(SEED)
+  sourceRef      String?
+  approvalStatus ApprovalStatus    @default(APPROVED)
+  duplicateKey   String?
+  audioFileId    String?
+  audioFile      AudioFile?        @relation(fields: [audioFileId], references: [id])
+  options        QuestionOption[]
+  testQuestions  TestQuestion[]
+  userAnswers    UserAnswer[]
+  aiExplanations AiExplanation[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@index([toeicPart])
+  @@index([difficulty])
+  @@index([approvalStatus])
+  @@index([source])
+  @@index([duplicateKey])
+}
+
+model QuestionOption {
+  id          String       @id @default(cuid())
+  questionId  String
+  question    Question     @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label       String
+  text        String
+  textZhTW    String?
+  textVi      String?
+  isCorrect   Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  userAnswers UserAnswer[]
+
+  @@unique([questionId, label])
+}
+
+model Test {
+  id            String         @id @default(cuid())
+  title         String
+  description   String?
+  isPublished   Boolean        @default(false)
+  timeLimitMin  Int?
+  questions     TestQuestion[]
+  attempts      TestAttempt[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model TestQuestion {
+  id          String   @id @default(cuid())
+  testId      String
+  questionId  String
+  order       Int
+  points      Int      @default(1)
+  test        Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([testId, questionId])
+  @@unique([testId, order])
+}
+
+model TestAttempt {
+  id             String          @id @default(cuid())
+  testId         String
+  userId         String
+  status         AttemptStatus   @default(IN_PROGRESS)
+  score          Int?
+  totalQuestions Int             @default(0)
+  correctCount   Int             @default(0)
+  startedAt      DateTime        @default(now())
+  completedAt    DateTime?
+  test           Test            @relation(fields: [testId], references: [id])
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers        UserAnswer[]
+  mistakeAnalyses MistakeAnalysis[]
+}
+
+model UserAnswer {
+  id               String          @id @default(cuid())
+  attemptId        String
+  userId           String
+  questionId       String
+  selectedOptionId String?
+  isCorrect        Boolean         @default(false)
+  answeredAt       DateTime        @default(now())
+  attempt          TestAttempt     @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question         Question        @relation(fields: [questionId], references: [id])
+  selectedOption   QuestionOption? @relation(fields: [selectedOptionId], references: [id])
+
+  @@unique([attemptId, questionId])
+}
+
+model StudyProgress {
+  id             String     @id @default(cuid())
+  userId         String
+  toeicPart      ToeicPart?
+  completedItems Int        @default(0)
+  correctRate    Float      @default(0)
+  minutesStudied Int        @default(0)
+  date           DateTime   @default(now())
+  user           User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AiChatSession {
+  id        String          @id @default(cuid())
+  userId    String
+  title     String?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiChatMessage[]
+}
+
+model AiChatMessage {
+  id        String        @id @default(cuid())
+  sessionId String
+  role      AiMessageRole
+  content   String
+  createdAt DateTime      @default(now())
+  session   AiChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model AiExplanation {
+  id                         String          @id @default(cuid())
+  userId                     String
+  questionId                 String
+  selectedOptionId           String?
+  correctAnswer              String
+  whySelectedAnswerIsWrong   String
+  whyCorrectAnswerIsCorrect  String
+  grammarPoint               String?
+  toeicStrategy              String?
+  explanationZhTw            String
+  responseZhTW               String?
+  responseVi                 String?
+  createdAt                  DateTime        @default(now())
+  user                       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question                   Question        @relation(fields: [questionId], references: [id])
+}
+
+model AiStudyPlan {
+  id        String            @id @default(cuid())
+  userId    String
+  title     String
+  summary   String
+  contentZhTW String?
+  contentVi   String?
+  createdAt DateTime          @default(now())
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  days      AiStudyPlanDay[]
+}
+
+model AiStudyPlanDay {
+  id          String      @id @default(cuid())
+  planId      String
+  dayNumber   Int
+  title       String
+  focus       String
+  tasks       String[]    @default([])
+  plan        AiStudyPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, dayNumber])
+}
+
+model AiGeneratedQuestion {
+  id             String       @id @default(cuid())
+  createdById    String
+  toeicPart      ToeicPart
+  topic          String
+  difficulty     SkillLevel
+  prompt         String
+  options        Json
+  correctAnswer  String
+  explanation    String
+  tags           String[]     @default([])
+  status         ApprovalStatus @default(PENDING_REVIEW)
+  duplicateKey   String?
+  sourceRef      String?
+  approvedAt     DateTime?
+  reviewedAt     DateTime?
+  reviewedById   String?
+  rejectionReason String?
+  createdAt      DateTime     @default(now())
+  createdBy      User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([duplicateKey])
+}
+
+model MistakeAnalysis {
+  id                   String       @id @default(cuid())
+  userId               String
+  attemptId            String?
+  toeicPart            ToeicPart
+  mistakeType          MistakeType
+  topic                String?
+  suggestedImprovement String
+  summaryZhTw          String
+  createdAt            DateTime     @default(now())
+  user                 User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempt              TestAttempt? @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+}
+
+model UserSkillProfile {
+  id               String     @id @default(cuid())
+  userId           String     @unique
+  estimatedLevel   SkillLevel @default(BEGINNER)
+  weakParts        ToeicPart[] @default([])
+  strongParts      ToeicPart[] @default([])
+  vocabularyLevel  SkillLevel @default(BEGINNER)
+  grammarLevel     SkillLevel @default(BEGINNER)
+  listeningLevel   SkillLevel @default(BEGINNER)
+  readingLevel     SkillLevel @default(BEGINNER)
+  updatedAt        DateTime   @updatedAt
+  user             User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
